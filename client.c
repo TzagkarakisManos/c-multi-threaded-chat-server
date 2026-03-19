@@ -63,8 +63,8 @@ int main()
 				exit(EXIT_FAILURE);
 			}
 
-			//Code added for version 1: 
-			
+			//code for version one (ping-pong)
+
 			strcpy(msg, "");
 
 			ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
