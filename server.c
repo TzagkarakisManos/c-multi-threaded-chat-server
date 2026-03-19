@@ -95,6 +95,21 @@ int main() {
 
 		snprintf(print_msg, sizeof(print_msg), "\033[35mUser %s\033[0m> %s\n", client_ip, msg);
 		printMsg(stdout, print_msg);
+
+		//code for version one (ping-pong)
+		printf("> ");
+		fflush(stdout);
+
+		if(fgets(msg, MAX_MSG_LEN, stdin) != NULL){
+			msg[strcspn(msg, "\n")] = 0;
+			if (sendMessage(client_fd, msg) == -1){
+				perror("sendMessage failure");
+				break;
+			}
+		} else {
+				break;
+			}
+
 		strcpy(msg, "");
 	}
 

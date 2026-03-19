@@ -62,6 +62,23 @@ int main()
 				perror("sendMessage failure");
 				exit(EXIT_FAILURE);
 			}
+
+			//Code added for version 1: 
+			
+			strcpy(msg, "");
+
+			ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
+
+			if (read_bytes > 0){
+				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n", msg);
+				printMsg(stdout, print_msg);
+			} else if (read_bytes == 0) {
+				printf("Server disconnected.\n");
+                break;
+			} else {
+				perror("recvMessage failure");
+				break;
+			}
 			strcpy(msg, "");
 		}
 	} while (!EOF_found);
