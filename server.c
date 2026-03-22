@@ -13,68 +13,48 @@
 
 struct clientsList cl;
 
-void *receive_thread(void *arg){
-	if (arg == NULL) {
-        perror("Socket initialization problem");
-		return NULL;
-    }
-	int socket_fd = *(int *)arg;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
-
-	while(1){
-		ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-		if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mUser\033[0m> %s\n> ", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("User disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-	}
-
-	shutdown(socket_fd, SHUT_RDWR);
-	return NULL;	
-}
-
-void *send_thread(void *arg) {
-    int fd = *(int *)arg;
+void *receive_thread(void *arg) {
+    int socket_fd = *(int *)arg;
+    free(arg);
+    
     char msg[MAX_MSG_LEN + 1];
+    char client_id[32]; 
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
 
-    while(1) {
-        printf("> ");
-        fflush(stdout);
+    if (getpeername(socket_fd, (struct sockaddr *)&addr, &addr_len) == 0) {
+        char ip_only[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addr.sin_addr, ip_only, sizeof(ip_only));
+        int port = ntohs(addr.sin_port);
+        snprintf(client_id, sizeof(client_id), "%s:%d", ip_only, port);
+    } else {
+        strncpy(client_id, "Unknown", sizeof(client_id));
+    }
 
-        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
-            msg[strcspn(msg, "\n")] = 0;
-            if (sendMessage(fd, msg) == -1) {
-                perror("sendMessage failure");
-                break;
-            }
-        } else {	
+    while (1) {
+        ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
+
+        if (read_bytes > 0) {
+            printf("[%s]: %s\n", client_id, msg);
+            broadcastClientsList(&cl, msg, client_id, socket_fd);
+        } else {
+            broadcastClientsList(&cl, "left the conversation", client_id, socket_fd);
+            printf("-- User %s disconnected --\n", client_id);
+            removeClient(&cl, socket_fd);
+            close(socket_fd);
             break; 
         }
+        memset(msg, 0, sizeof(msg));
     }
-    shutdown(fd, SHUT_RDWR);
     return NULL;
 }
 
 int main() {
-	struct sockaddr_in addr;
-	int socket_fd;
-	int client_fd;
-	int socket_option;
-
-	// data required to read the IP address of the connected client
-	struct sockaddr_in client_addr;
-	socklen_t client_addr_len = sizeof(client_addr);
-	char client_ip[INET_ADDRSTRLEN];
-
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
+    struct sockaddr_in addr;
+    int socket_fd, client_fd, socket_option;
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    char ip_buf[INET_ADDRSTRLEN];
 
     socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd == -1) { perror("socket"); exit(1); }
@@ -102,19 +82,17 @@ int main() {
         addClient(&cl, client_fd);
         broadcastClientsList(&cl, "joined the room", ip_buf, -1);
 
-	int *thread_args = malloc(sizeof(int));
-	*thread_args = client_fd;
+        int *arg = malloc(sizeof(int));
+        *arg = client_fd;
 
-	pthread_t receive_thread_id;
-	if (pthread_create(&receive_thread_id, NULL, receive_thread, thread_args) != 0){
-		perror("Failed to initialize threads");
-	}
-
-	send_thread(thread_args);
-	shutdown(client_fd, SHUT_RDWR);
-    pthread_join(receive_thread_id, NULL);
-    close(client_fd);
-	close(socket_fd);
-
-	return 0;
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, receive_thread, arg) != 0) {
+            removeClient(&cl, client_fd);
+            free(arg); 
+            close(client_fd);
+            continue;
+        }
+        pthread_detach(tid);
+    }
+    return 0;
 }

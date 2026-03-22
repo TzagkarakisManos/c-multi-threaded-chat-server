@@ -1,139 +1,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/un.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 #include <string.h>
-#include <errno.h>
 
 #include "config.h"
 #include "readwrite.h"
 #include "msg.h"
-#include "clientsList.h"
-#include "printMsg.h"
 
-void *receive_thread(void *arg){
-	if (arg == NULL) {
-        perror("Socket initialization problem");
-		return NULL;
-    }
-	int socket_fd = *(int *)arg;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
+void *receive_handler(void *arg) {
+    int socket_fd = *(int *)arg;
+    char msg[MAX_MSG_LEN + 128];
 
-	while(1){
-		ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-		if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n> ", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-	}
-
-	shutdown(socket_fd, SHUT_RDWR);
-	return NULL;	
-}
-
-void *send_thread(void *arg) {
-    int fd = *(int *)arg;
-    char msg[MAX_MSG_LEN + 1];
-
-    while(1) {
-        printf("> ");
-        fflush(stdout);
-
-        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
-            msg[strcspn(msg, "\n")] = 0;
-            if (sendMessage(fd, msg) == -1) {
-                perror("sendMessage failure");
-                break;
-            }
-        } else {	
-            break; 
+    while (1) {
+        ssize_t bytes = recvMessage(socket_fd, msg, sizeof(msg) - 1);
+        if (bytes > 0) {
+            printf("\r\33[2K%s\n> ", msg);
+            fflush(stdout);
+        } else {
+            printf("\nConnection lost\n");
+            exit(0);
         }
+        memset(msg, 0, sizeof(msg));
     }
-    shutdown(fd, SHUT_RDWR);
     return NULL;
 }
 
-int main()
-{
-	struct sockaddr_in addr;
-	int socket_fd;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
-	int EOF_found;
+int main() {
+    int sock_fd;
+    struct sockaddr_in serv_addr;
+    char buf[MAX_MSG_LEN + 1];
 
-	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (socket_fd == -1) {
-		perror("socket failure");
-		exit(EXIT_FAILURE);
-	}
+    sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+    inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
 
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(PORT);
+    if (connect(sock_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("connect");
+        exit(1);
+    }
 
-	if (inet_pton(AF_INET, SERVER_IP_ADDRESS, &addr.sin_addr) <= 0) {
-	    close(socket_fd);
-	    perror("inet_pton failure");
-	    exit(EXIT_FAILURE);
-	}
+    pthread_t tid;
+    pthread_create(&tid, NULL, receive_handler, &sock_fd);
+    pthread_detach(tid);
 
-	if (connect(socket_fd, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
-		close(socket_fd);
-	    perror("connect failure");
-	    exit(EXIT_FAILURE);
-	}
+    printf("Chat started. Type messages below:\n> ");
+    while (fgets(buf, MAX_MSG_LEN, stdin)) {
+        buf[strcspn(buf, "\n")] = 0;
+        if (strlen(buf) > 0) {
+            sendMessage(sock_fd, buf);
+        }
+        printf("> ");
+        fflush(stdout);
+    }
 
-	EOF_found = 0;
-
-	do {
-		do {
-			snprintf(print_msg, sizeof(print_msg), "> ");
-			printMsg(stdout, print_msg);
-
-			if (fgets(msg, sizeof(msg), stdin) == NULL) {
-				EOF_found = 1;
-				break;
-			}
-
-			msg[strcspn(msg, "\n")] = '\0';
-		} while (strlen(msg) == 0 && !EOF_found);
-
-		if (!EOF_found) {
-			if (sendMessage(socket_fd, msg) == -1) {
-				close(socket_fd);
-				perror("sendMessage failure");
-				exit(EXIT_FAILURE);
-			}
-
-			//code for version one (ping-pong)
-
-			strcpy(msg, "");
-
-			ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-
-			if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-		}
-	} while (!EOF_found);
-
-	close(socket_fd);
-
-	return 0;
+    close(sock_fd);
+    return 0;
 }
