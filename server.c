@@ -14,6 +14,56 @@
 
 struct clientsList cl;
 
+void *receive_thread(void *arg){
+	if (arg == NULL) {
+        perror("Socket initialization problem");
+		return NULL;
+    }
+	int socket_fd = *(int *)arg;
+	char msg[MAX_MSG_LEN + 1];
+	char print_msg[MAX_PRINT_MSG_LEN + 1];
+
+	while(1){
+		ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
+		if (read_bytes > 0){
+				snprintf(print_msg, sizeof(print_msg), "\033[35mUser\033[0m> %s\n> ", msg);
+				printMsg(stdout, print_msg);
+			} else if (read_bytes == 0) {
+				printf("Server disconnected.\n");
+                break;
+			} else {
+				perror("recvMessage failure");
+				break;
+			}
+			strcpy(msg, "");
+	}
+
+	shutdown(socket_fd, SHUT_RDWR);
+	return NULL;	
+}
+
+void *send_thread(void *arg) {
+    int fd = *(int *)arg;
+    char msg[MAX_MSG_LEN + 1];
+
+    while(1) {
+        printf("> ");
+        fflush(stdout);
+
+        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
+            msg[strcspn(msg, "\n")] = 0;
+            if (sendMessage(fd, msg) == -1) {
+                perror("sendMessage failure");
+                break;
+            }
+        } else {	
+            break; 
+        }
+    }
+    shutdown(fd, SHUT_RDWR);
+    return NULL;
+}
+
 int main() {
 	struct sockaddr_in addr;
 	int socket_fd;
@@ -71,101 +121,20 @@ int main() {
 	snprintf(print_msg, sizeof(print_msg), "-- User %s has joined the conversation\n", client_ip);
 	printMsg(stdout, print_msg);
 
-	while (1) {
-		ssize_t read_bytes = recvMessage(client_fd, msg, MAX_MSG_LEN);
+	int *thread_args = malloc(sizeof(int));
+	*thread_args = client_fd;
 
-		if (read_bytes == 0) {
-			snprintf(print_msg, sizeof(print_msg), "-- User %s has left the conversation\n", client_ip);
-			printMsg(stdout, print_msg);
-			close(client_fd);
-			break;
-		}
-		else if (read_bytes == -1) {
-			perror("recvMessage failure");
-			close(client_fd);
-			close(socket_fd);
-			exit(EXIT_FAILURE);
-		} else if (read_bytes == -2) {
-			snprintf(print_msg, sizeof(print_msg), "error: the message of the client cannot fit in the 'msg' buffer\n");
-			printMsg(stderr, print_msg);
-			close(client_fd);
-			close(socket_fd);
-			exit(EXIT_FAILURE);
-		}
-
-		snprintf(print_msg, sizeof(print_msg), "\033[35mUser %s\033[0m> %s\n", client_ip, msg);
-		printMsg(stdout, print_msg);
-
-		//code for version one (ping-pong)
-		
-		printf("> ");
-		fflush(stdout);
-
-		if(fgets(msg, MAX_MSG_LEN, stdin) != NULL){
-			msg[strcspn(msg, "\n")] = 0;
-			if (sendMessage(client_fd, msg) == -1){
-				perror("sendMessage failure");
-				break;
-			}
-		} else {
-				break;
-			}
-
-		strcpy(msg, "");
+	pthread_t receive_thread_id;
+	if (pthread_create(&receive_thread_id, NULL, receive_thread, thread_args) != 0){
+		perror("Failed to initialize threads");
 	}
+
+	send_thread(thread_args);
+	shutdown(client_fd, SHUT_RDWR); // Stop the other thread 
+    pthread_join(receive_thread_id, NULL);   // Wait for it to finish [cite: 114]
+    close(client_fd);
 
 	close(socket_fd);
 
 	return 0;
-}
-
-void *receive_thread(void *arg){
-	if (arg == NULL) {
-        perror("Socket initialization problem");
-		return;
-    }
-
-	int socket_fd = *(int *)arg;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
-	ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-
-	while(1){
-		if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n>", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-	}
-
-	shutdown(socket_fd, SHUT_RDWR);
-	return NULL;	
-}
-
-void *send_thread(void *arg) {
-    int fd = *(int *)arg;
-    char msg[MAX_MSG_LEN + 1];
-
-    while(1) {
-        printf("> ");
-        fflush(stdout);
-
-        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
-            msg[strcspn(msg, "\n")] = 0;
-            if (sendMessage(fd, msg) == -1) {
-                perror("sendMessage failure");
-                break;
-            }
-        } else {	
-            break; 
-        }
-    }
-    shutdown(fd, SHUT_RDWR);
-    return NULL;
 }

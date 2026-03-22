@@ -12,6 +12,56 @@
 #include "clientsList.h"
 #include "printMsg.h"
 
+void *receive_thread(void *arg){
+	if (arg == NULL) {
+        perror("Socket initialization problem");
+		return NULL;
+    }
+	int socket_fd = *(int *)arg;
+	char msg[MAX_MSG_LEN + 1];
+	char print_msg[MAX_PRINT_MSG_LEN + 1];
+
+	while(1){
+		ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
+		if (read_bytes > 0){
+				snprintf(print_msg, sizeof(print_msg), "\033[35mUser\033[0m> %s\n> ", msg);
+				printMsg(stdout, print_msg);
+			} else if (read_bytes == 0) {
+				printf("Server disconnected.\n");
+                break;
+			} else {
+				perror("recvMessage failure");
+				break;
+			}
+			strcpy(msg, "");
+	}
+
+	shutdown(socket_fd, SHUT_RDWR);
+	return NULL;	
+}
+
+void *send_thread(void *arg) {
+    int fd = *(int *)arg;
+    char msg[MAX_MSG_LEN + 1];
+
+    while(1) {
+        printf("> ");
+        fflush(stdout);
+
+        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
+            msg[strcspn(msg, "\n")] = 0;
+            if (sendMessage(fd, msg) == -1) {
+                perror("sendMessage failure");
+                break;
+            }
+        } else {	
+            break; 
+        }
+    }
+    shutdown(fd, SHUT_RDWR);
+    return NULL;
+}
+
 int main()
 {
 	struct sockaddr_in addr;
@@ -86,55 +136,4 @@ int main()
 	close(socket_fd);
 
 	return 0;
-}
-
-void *receive_thread(void *arg){
-	if (arg == NULL) {
-        perror("Socket initialization problem");
-		return;
-    }
-
-	int socket_fd = *(int *)arg;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
-	ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-
-	while(1){
-		if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n>", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-	}
-
-	shutdown(socket_fd, SHUT_RDWR);
-	return NULL;	
-}
-
-void *send_thread(void *arg) {
-    int fd = *(int *)arg;
-    char msg[MAX_MSG_LEN + 1];
-
-    while(1) {
-        printf("> ");
-        fflush(stdout);
-
-        if(fgets(msg, MAX_MSG_LEN, stdin) != NULL) {
-            msg[strcspn(msg, "\n")] = 0;
-            if (sendMessage(fd, msg) == -1) {
-                perror("sendMessage failure");
-                break;
-            }
-        } else {	
-            break; 
-        }
-    }
-    shutdown(fd, SHUT_RDWR);
-    return NULL;
 }
