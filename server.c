@@ -29,7 +29,7 @@ void *receive_thread(void *arg){
 				snprintf(print_msg, sizeof(print_msg), "\033[35mUser\033[0m> %s\n> ", msg);
 				printMsg(stdout, print_msg);
 			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
+				printf("User disconnected.\n");
                 break;
 			} else {
 				perror("recvMessage failure");
