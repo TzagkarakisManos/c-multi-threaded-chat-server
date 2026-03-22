@@ -75,7 +75,6 @@ int main() {
 	socklen_t client_addr_len = sizeof(client_addr);
 	char client_ip[INET_ADDRSTRLEN];
 
-	char msg[MAX_MSG_LEN + 1];
 	char print_msg[MAX_PRINT_MSG_LEN + 1];
 
 	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -130,10 +129,9 @@ int main() {
 	}
 
 	send_thread(thread_args);
-	shutdown(client_fd, SHUT_RDWR); // Stop the other thread 
-    pthread_join(receive_thread_id, NULL);   // Wait for it to finish [cite: 114]
+	shutdown(client_fd, SHUT_RDWR);
+    pthread_join(receive_thread_id, NULL);
     close(client_fd);
-
 	close(socket_fd);
 
 	return 0;

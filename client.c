@@ -24,7 +24,7 @@ void *receive_thread(void *arg){
 	while(1){
 		ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
 		if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mUser\033[0m> %s\n> ", msg);
+				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n> ", msg);
 				printMsg(stdout, print_msg);
 			} else if (read_bytes == 0) {
 				printf("Server disconnected.\n");
@@ -66,9 +66,6 @@ int main()
 {
 	struct sockaddr_in addr;
 	int socket_fd;
-	char msg[MAX_MSG_LEN + 1];
-	char print_msg[MAX_PRINT_MSG_LEN + 1];
-	int EOF_found;
 
 	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (socket_fd == -1) {
@@ -91,48 +88,17 @@ int main()
 	    exit(EXIT_FAILURE);
 	}
 
-	EOF_found = 0;
+	int *thread_args = malloc(sizeof(int));
+    *thread_args = socket_fd;
 
-	do {
-		do {
-			snprintf(print_msg, sizeof(print_msg), "> ");
-			printMsg(stdout, print_msg);
+	pthread_t receive_thread_id;
+	if (pthread_create(&receive_thread_id, NULL, receive_thread, thread_args) != 0){
+		perror("Failed to initialize threads");
+	}
 
-			if (fgets(msg, sizeof(msg), stdin) == NULL) {
-				EOF_found = 1;
-				break;
-			}
-
-			msg[strcspn(msg, "\n")] = '\0';
-		} while (strlen(msg) == 0 && !EOF_found);
-
-		if (!EOF_found) {
-			if (sendMessage(socket_fd, msg) == -1) {
-				close(socket_fd);
-				perror("sendMessage failure");
-				exit(EXIT_FAILURE);
-			}
-
-			//code for version one (ping-pong)
-
-			strcpy(msg, "");
-
-			ssize_t read_bytes = recvMessage(socket_fd, msg, MAX_MSG_LEN);
-
-			if (read_bytes > 0){
-				snprintf(print_msg, sizeof(print_msg), "\033[35mServer\033[0m> %s\n", msg);
-				printMsg(stdout, print_msg);
-			} else if (read_bytes == 0) {
-				printf("Server disconnected.\n");
-                break;
-			} else {
-				perror("recvMessage failure");
-				break;
-			}
-			strcpy(msg, "");
-		}
-	} while (!EOF_found);
-
+	send_thread(thread_args);
+	shutdown(socket_fd, SHUT_RDWR);
+    pthread_join(receive_thread_id, NULL);
 	close(socket_fd);
 
 	return 0;
